@@ -30,6 +30,9 @@ let state = "ready";
 let player, collectible, hazards, score, level;
 let best = 0;
 let lastTime;
+let aimAngle = 0;
+let bullets = [];
+let fireTimer = 0;
 
 try {
   best = Number(localStorage.getItem(storageKey)) || 0;
@@ -40,6 +43,8 @@ try {
 function resetRound() {
   player = { x: width / 2, y: height / 2, size: 26 };
   hazards = [];
+  bullets = [];
+  fireTimer = 0;
   collectible = undefined;
   score = 0;
   level = 1;
@@ -134,9 +139,38 @@ function moveHazards(dt) {
   }
 }
 
+function fireGun() {
+  const muzzleDistance = player.size / 2 + 12;
+  bullets.push({
+    x: player.x + Math.cos(aimAngle) * muzzleDistance,
+    y: player.y + Math.sin(aimAngle) * muzzleDistance,
+    dx: Math.cos(aimAngle), dy: Math.sin(aimAngle), size: 6, life: 1.5
+  });
+}
+
+function moveBullets(dt) {
+  for (const bullet of bullets) {
+    bullet.x += bullet.dx * 520 * dt;
+    bullet.y += bullet.dy * 520 * dt;
+    bullet.life -= dt;
+    const hitIndex = hazards.findIndex(hazard => overlaps(bullet, hazard));
+    if (hitIndex !== -1) {
+      hazards.splice(hitIndex, 1);
+      bullet.life = 0;
+    }
+  }
+  bullets = bullets.filter(bullet => bullet.life > 0 && bullet.x >= 0 && bullet.x <= width && bullet.y >= 0 && bullet.y <= height);
+}
+
 function update(dt) {
   movePlayer(dt);
   moveHazards(dt);
+  fireTimer += dt;
+  if (fireTimer >= 1) {
+    fireTimer %= 1;
+    fireGun();
+  }
+  moveBullets(dt);
   if (hazards.some(hazard => overlaps(player, hazard))) {
     endRound();
     return;
@@ -189,6 +223,20 @@ function draw() {
     ctx.fillText("×", hazard.x, hazard.y + 1);
   }
   drawSquare(player, THEME.player);
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(aimAngle);
+  ctx.fillStyle = "#f5f7ff";
+  ctx.fillRect(2, -4, player.size / 2 + 14, 8);
+  ctx.fillStyle = THEME.hazard;
+  ctx.fillRect(player.size / 2 + 8, -2, 7, 4);
+  ctx.restore();
+  for (const bullet of bullets) {
+    ctx.fillStyle = THEME.collectible;
+    ctx.beginPath();
+    ctx.arc(bullet.x, bullet.y, bullet.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.fillStyle = THEME.background;
   ctx.fillRect(player.x - 7, player.y - 4, 4, 5);
   ctx.fillRect(player.x + 3, player.y - 4, 4, 5);
@@ -209,6 +257,12 @@ function clearInput() {
 }
 
 action.addEventListener("click", startRound);
+canvas.addEventListener("pointermove", event => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = (event.clientX - rect.left) * width / rect.width;
+  const mouseY = (event.clientY - rect.top) * height / rect.height;
+  aimAngle = Math.atan2(mouseY - player.y, mouseX - player.x);
+});
 window.addEventListener("keydown", event => {
   const key = event.key.toLowerCase();
   if (state !== "playing" || !controls.includes(key) ||
